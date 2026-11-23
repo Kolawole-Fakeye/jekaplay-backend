@@ -158,7 +158,7 @@ router.post('/logout', async (req, res) => {
 router.get('/me', requireAuth, async (req, res) => {
   try {
     const { rows } = await query(
-      `SELECT id, role, full_name, phone, birthday, referral_code
+      `SELECT id, role, full_name, phone, birthday, referral_code, must_change_pin
          FROM users WHERE id = $1 AND deleted_at IS NULL AND is_active = true`,
       [req.user.id]
     );
@@ -184,7 +184,7 @@ router.post('/set-pin', requireAuth, async (req, res) => {
       ok = false;
     }
     if (!ok) return res.status(401).json({ error: 'Current PIN is wrong' });
-    await query(`UPDATE users SET password_hash = $2 WHERE id = $1`, [user.id, await hashPassword(String(newPin))]);
+    await query(`UPDATE users SET password_hash = $2, must_change_pin = false WHERE id = $1`, [user.id, await hashPassword(String(newPin))]);
     await query(`UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, [user.id]);
     res.json(await issueSession(user));
   } catch (err) {
