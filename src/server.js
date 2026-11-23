@@ -3,6 +3,7 @@ import cors from 'cors';
 import { pool, query } from './db.js';
 import authRoutes, { bootstrapOwnerPassword } from './authRoutes.js';
 import adminRoutes from './adminRoutes.js';
+import opsRoutes from './opsRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -16,6 +17,7 @@ app.use(express.json({ limit: '100kb' }));
 // Login, PIN and staff management
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/ops', opsRoutes);
 
 // 1. Health check
 app.get('/api/health', async (_req, res) => {
