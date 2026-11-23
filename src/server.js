@@ -4,6 +4,7 @@ import { pool, query } from './db.js';
 import authRoutes, { bootstrapOwnerPassword } from './authRoutes.js';
 import adminRoutes from './adminRoutes.js';
 import opsRoutes from './opsRoutes.js';
+import manageRoutes from './manageRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -18,6 +19,7 @@ app.use(express.json({ limit: '100kb' }));
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/ops', opsRoutes);
+app.use('/api/manage', manageRoutes);
 
 // 1. Health check
 app.get('/api/health', async (_req, res) => {
