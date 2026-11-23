@@ -1,12 +1,21 @@
 import express from 'express';
 import cors from 'cors';
 import { pool, query } from './db.js';
+import authRoutes, { bootstrapOwnerPassword } from './authRoutes.js';
+import adminRoutes from './adminRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
+// Render sits behind a proxy; this makes req.ip the real visitor (needed for login rate limits).
+app.set('trust proxy', 1);
+
 app.use(cors({ origin: '*' }));
-app.use(express.json());
+app.use(express.json({ limit: '100kb' }));
+
+// Login, PIN and staff management
+app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
 
 // 1. Health check
 app.get('/api/health', async (_req, res) => {
@@ -341,6 +350,11 @@ app.post('/api/orders', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Jekaplay API running on port ${PORT}`);
+  try {
+    await bootstrapOwnerPassword();
+  } catch (err) {
+    console.error('Owner setup failed:', err);
+  }
 });
