@@ -13,7 +13,7 @@ export const verifyPassword = (plain, hash) => bcrypt.compare(plain, hash);
 export function signToken(user) {
   return jwt.sign({ sub: user.id, role: user.role }, SECRET, {
     algorithm: 'HS256',
-    expiresIn: '12h',
+    expiresIn: '15m',
   });
 }
 
