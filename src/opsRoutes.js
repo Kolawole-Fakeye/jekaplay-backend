@@ -241,6 +241,27 @@ router.get('/orders/online', h(async (req, res) => {
   res.json({ orders: rows });
 }));
 
+// Everything the kitchen needs on one screen: live orders from every channel, plus the last two hours of finished ones.
+router.get('/orders/board', h(async (req, res) => {
+  const branchId = String(req.query.branch_id ?? '');
+  if (!(await canUseBranch(req, branchId))) return res.status(403).json({ error: 'You do not work at that outlet' });
+  const { rows } = await query(
+    `SELECT o.id, o.order_no, o.placed_at, o.channel, o.order_type, o.status, o.total_kobo, o.notes, o.guest_name,
+            o.delivery_address, u.full_name AS customer_name, u.phone AS customer_phone, s.full_name AS staff_name,
+            (SELECT json_agg(json_build_object('name', oi.name_snapshot, 'quantity', oi.quantity) ORDER BY oi.name_snapshot)
+               FROM order_items oi WHERE oi.order_id = o.id) AS items
+       FROM orders o
+       LEFT JOIN users u ON u.id = o.customer_id
+       LEFT JOIN users s ON s.id = o.created_by
+      WHERE o.branch_id = $1
+        AND (o.status IN ('pending_payment', 'received', 'preparing', 'ready', 'out_for_delivery')
+             OR (o.status = 'completed' AND o.completed_at > now() - interval '2 hours'))
+      ORDER BY o.placed_at LIMIT 150`,
+    [branchId]
+  );
+  res.json({ orders: rows, server_time: new Date().toISOString() });
+}));
+
 const NEXT = {
   pending_payment: ['received', 'cancelled'],
   received: ['preparing', 'cancelled'],
