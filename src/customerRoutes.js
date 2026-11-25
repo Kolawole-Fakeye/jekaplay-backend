@@ -64,4 +64,36 @@ router.post('/', async (req, res) => {
   }
 });
 
+// Forgot PIN: a supervisor, admin or the owner issues a temporary 4-digit PIN that the customer must change at next login.
+router.post('/:id/reset-pin', requireRole('owner', 'admin', 'supervisor'), async (req, res) => {
+  const id = String(req.params.id);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) return res.status(400).json({ error: 'Invalid customer' });
+  try {
+    const c = (await query(`SELECT id, full_name FROM users WHERE id = $1 AND role = 'customer' AND is_active = true AND deleted_at IS NULL`, [id])).rows[0];
+    if (!c) return res.status(404).json({ error: 'Customer not found' });
+    let temp;
+    do {
+      temp = String(crypto.randomInt(0, 10000)).padStart(4, '0');
+    } while (/^(\d)\1{3}$/.test(temp) || ['1234', '4321', '2580', '0000'].includes(temp));
+    const hash = await hashPassword(temp);
+    const cl = await pool.connect();
+    try {
+      await cl.query('BEGIN');
+      await cl.query(`UPDATE users SET password_hash = $2, must_change_pin = true, failed_pin_attempts = 0, locked_until = NULL WHERE id = $1`, [id, hash]);
+      await cl.query(`UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, [id]);
+      await cl.query(`INSERT INTO audit_log (actor_id, action, target_type, target_id) VALUES ($1, 'customer.pin_reset', 'user', $2)`, [req.user.id, id]);
+      await cl.query('COMMIT');
+    } catch (e) {
+      await cl.query('ROLLBACK').catch(() => {});
+      throw e;
+    } finally {
+      cl.release();
+    }
+    res.json({ temp_pin: temp, customer: c.full_name });
+  } catch (err) {
+    console.error('Customer PIN reset error:', err);
+    res.status(500).json({ error: 'Something went wrong' });
+  }
+});
+
 export default router;
