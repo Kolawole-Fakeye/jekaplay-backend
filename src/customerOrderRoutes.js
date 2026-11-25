@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool, query } from './db.js';
-import { requireAuth, requireRole } from './auth.js';
+import crypto from 'node:crypto';
+import { hashPassword, verifyPassword, requireAuth, requireRole } from './auth.js';
 
 // A signed-in customer places and follows their own orders.
 const router = Router();
@@ -122,7 +123,7 @@ router.get('/orders', async (req, res) => {
   try {
     const { rows } = await query(
       `SELECT o.id, o.order_no, o.placed_at, o.order_type, o.status, o.total_kobo, b.name AS branch,
-              (SELECT json_agg(json_build_object('name', oi.name_snapshot, 'quantity', oi.quantity) ORDER BY oi.name_snapshot)
+              (SELECT json_agg(json_build_object('menu_item_id', oi.menu_item_id, 'name', oi.name_snapshot, 'quantity', oi.quantity) ORDER BY oi.name_snapshot)
                  FROM order_items oi WHERE oi.order_id = o.id) AS items
          FROM orders o JOIN branches b ON b.id = o.branch_id
         WHERE o.customer_id = $1 ORDER BY o.placed_at DESC LIMIT 10`,
@@ -131,6 +132,80 @@ router.get('/orders', async (req, res) => {
     res.json({ orders: rows });
   } catch (err) {
     console.error('Customer orders error:', err);
+    res.status(500).json({ error: 'Something went wrong' });
+  }
+});
+
+router.get('/profile', async (req, res) => {
+  try {
+    const { rows } = await query(`SELECT id, full_name, phone, birthday FROM users WHERE id = $1 AND deleted_at IS NULL`, [req.user.id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Account not found' });
+    res.json({ profile: rows[0] });
+  } catch (err) {
+    console.error('Profile error:', err);
+    res.status(500).json({ error: 'Something went wrong' });
+  }
+});
+
+// Name and birthday are optional extras (the birthday unlocks birthday offers).
+router.patch('/profile', async (req, res) => {
+  try {
+    const name = req.body?.full_name === undefined ? null : String(req.body.full_name).trim();
+    if (name !== null && (name.length < 2 || name.length > 80)) return res.status(400).json({ error: 'Enter your name' });
+    let birthday = null;
+    if (req.body?.birthday) {
+      birthday = String(req.body.birthday);
+      const t = Date.parse(birthday);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(birthday) || Number.isNaN(t) || t > Date.now() || t < Date.parse('1920-01-01')) {
+        return res.status(400).json({ error: 'Check the birthday date' });
+      }
+    }
+    const { rows } = await query(
+      `UPDATE users SET full_name = COALESCE($2, full_name), birthday = COALESCE($3::date, birthday), updated_at = now()
+        WHERE id = $1 AND deleted_at IS NULL RETURNING id, full_name, phone, birthday`,
+      [req.user.id, name, birthday]
+    );
+    res.json({ profile: rows[0] });
+  } catch (err) {
+    console.error('Profile update error:', err);
+    res.status(500).json({ error: 'Something went wrong' });
+  }
+});
+
+// Delete my account: personal details are erased; order records stay, no longer linked to a person.
+router.post('/delete-account', async (req, res) => {
+  const pin = String(req.body?.pin ?? '');
+  try {
+    const u = (await query(`SELECT id, password_hash FROM users WHERE id = $1 AND deleted_at IS NULL`, [req.user.id])).rows[0];
+    let ok = false;
+    try {
+      ok = !!u && (await verifyPassword(pin, u.password_hash));
+    } catch {
+      ok = false;
+    }
+    if (!ok) return res.status(401).json({ error: 'That PIN is not correct' });
+    const scrambled = await hashPassword(crypto.randomBytes(24).toString('hex'));
+    const c = await pool.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query(
+        `UPDATE users SET is_active = false, deleted_at = now(), full_name = 'Deleted customer', email = NULL, phone = NULL,
+                birthday = NULL, referral_code = NULL, password_hash = $2, updated_at = now() WHERE id = $1`,
+        [u.id, scrambled]
+      );
+      await c.query(`DELETE FROM customer_profiles WHERE user_id = $1`, [u.id]);
+      await c.query(`UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, [u.id]);
+      await c.query(`INSERT INTO audit_log (actor_id, action, target_type, target_id) VALUES ($1, 'customer.deleted_account', 'user', $1)`, [u.id]);
+      await c.query('COMMIT');
+    } catch (e) {
+      await c.query('ROLLBACK').catch(() => {});
+      throw e;
+    } finally {
+      c.release();
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Delete account error:', err);
     res.status(500).json({ error: 'Something went wrong' });
   }
 });
