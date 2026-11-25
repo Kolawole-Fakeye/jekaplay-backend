@@ -38,7 +38,7 @@ const WEAK = new Set(['1234', '4321', '123456', '654321', '123123', '112233']);
 function pinProblem(pin, isStaff) {
   const p = String(pin ?? '');
   if (isStaff ? !/^\d{4}$/.test(p) : !/^\d{4}$/.test(p)) {
-    return isStaff ? 'Staff PINs must be exactly 6 digits' : 'PIN must be 4 to 6 digits';
+    return isStaff ? 'Staff PINs must be exactly 4 digits' : 'PIN must be digits';
   }
   if (/^(\d)\1+$/.test(p) || WEAK.has(p)) return 'That PIN is too easy to guess. Pick another.';
   return null;
