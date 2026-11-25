@@ -5,11 +5,16 @@ import { normalizePhone } from './authRoutes.js';
 
 const router = Router();
 
-const WEAK = new Set(['1234', '4321', '123456', '654321', '123123', '112233']);
+const TERMS_VERSION = '2026-11-25';
+const COMMON = new Set(['1234', '4321', '1212', '2580', '0852', '1004', '2000', '6969', '1122', '1313']);
+function isRun(p) {
+  const d = p.split('').map(Number);
+  return d.every((x, i) => i === 0 || x - d[i - 1] === 1) || d.every((x, i) => i === 0 || d[i - 1] - x === 1);
+}
 function pinProblem(pin) {
   const p = String(pin ?? '');
-  if (!/^\d{4,6}$/.test(p)) return 'PIN must be 4 to 6 digits';
-  if (/^(\d)\1+$/.test(p) || WEAK.has(p)) return 'That PIN is too easy to guess. Pick another.';
+  if (!/^\d{4}$/.test(p)) return 'Your PIN must be exactly 4 digits';
+  if (/^(\d)\1{3}$/.test(p) || COMMON.has(p) || isRun(p)) return 'That PIN is too easy to guess. Pick another.';
   return null;
 }
 
@@ -64,7 +69,8 @@ router.post('/signup', async (req, res) => {
   if (limited(req.ip)) return res.status(429).json({ error: 'Too many sign-ups from this connection. Try again later.' });
   const name = String(req.body?.full_name ?? '').trim();
   const phone = normalizePhone(req.body?.phone);
-  if (name.length < 2 || name.length > 80) return res.status(400).json({ error: 'Enter your name' });
+  const displayName = name.length >= 2 ? name.slice(0, 80) : 'Jekaplay customer';
+  if (req.body?.accepted_terms !== true) return res.status(400).json({ error: 'Please accept the Terms and Privacy Policy to continue' });
   if (!/^\+234\d{10}$/.test(phone)) return res.status(400).json({ error: 'Enter a valid Nigerian WhatsApp number' });
   const problem = pinProblem(req.body?.pin);
   if (problem) return res.status(400).json({ error: problem });
@@ -79,8 +85,9 @@ router.post('/signup', async (req, res) => {
       branchId = b.rows[0]?.id || null;
     }
     const u = await c.query(
-      `INSERT INTO users (role, full_name, phone, password_hash) VALUES ('customer', $1, $2, $3) RETURNING id`,
-      [name, phone, hash]
+      `INSERT INTO users (role, full_name, phone, password_hash, terms_accepted_at, terms_version)
+       VALUES ('customer', $1, $2, $3, now(), $4) RETURNING id`,
+      [displayName, phone, hash, TERMS_VERSION]
     );
     const id = u.rows[0].id;
     await c.query(`INSERT INTO customer_profiles (user_id, preferred_branch, whatsapp_number) VALUES ($1, $2, $3)`, [id, branchId, phone]);
