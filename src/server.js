@@ -8,6 +8,7 @@ import manageRoutes from './manageRoutes.js';
 import menuRoutes from './menuRoutes.js';
 import customerRoutes from './customerRoutes.js';
 import publicRoutes from './publicRoutes.js';
+import customerOrderRoutes from './customerOrderRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -26,6 +27,7 @@ app.use('/api/manage', manageRoutes);
 app.use('/api/menu-admin', menuRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/public', publicRoutes);
+app.use('/api/me', customerOrderRoutes);
 
 // 1. Health check
 app.get('/api/health', async (_req, res) => {
