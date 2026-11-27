@@ -5,7 +5,7 @@ import { normalizePhone } from './authRoutes.js';
 
 const router = Router();
 
-const TERMS_VERSION = '2026-11-25';
+const TERMS_VERSION = '2026-11-26';
 const COMMON = new Set(['1234', '4321', '1212', '2580', '0852', '1004', '2000', '6969', '1122', '1313']);
 function isRun(p) {
   const d = p.split('').map(Number);
